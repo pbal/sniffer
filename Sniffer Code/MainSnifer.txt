@@ -1,0 +1,966 @@
+import jpcap.*;
+import jpcap.packet.*;
+import java.awt.*;
+import java.awt.event.*;
+import javax.swing.*;
+import java.util.*;
+import javax.swing.table.*;
+import java.io.*;
+import javax.swing.tree.*;
+
+class MainSniffer extends JFrame implements ActionListener,MouseListener
+{
+  JPanel p;
+  JButton btstart,btstop,btsave,btopen,btfollowtcp;
+  JComboBox netdevices;
+  JTextArea ta,tahex;
+  boolean flag;
+  JLabel lb;
+  JScrollPane jsp,jsphex;
+  java.awt.List ls;
+  JFileChooser jfc;
+
+  JMenu menufile,menucapture,menustatistics;
+  JMenuBar menubar;
+  JMenuItem open,save,start,stop,networkgraph,transportgraph,applicationgraph;
+
+  NetworkInterface device[];
+  JpcapCaptor captor;
+  JpcapWriter jw;  
+    
+  ArrayList<Packet> packlist;
+  ArrayList<Packet> filteredpacklist;
+
+  JTable jt;
+  JScrollPane js;
+ 
+  
+  String pkno,pktime,pksource,pkdestination,pkprotocol,pkinfo;
+  int pksourceport,pkdestinationport,windowsize;
+  boolean synflag,ackflag,urgflag,pushflag,resetflag,finflag;
+  long ackno,seqno;
+  int udplength;
+  
+  String rowelement[];
+  ArrayList<String[]> data=new ArrayList<String[]>(); 
+  tablemodel tm;
+  
+  ObjectOutputStream oos;
+  FileOutputStream fos;
+  ObjectInputStream ois;
+  FileInputStream fis;
+ 
+  JTree headerdetails;
+  JScrollPane jsptree;
+  
+  int ipcount,arpcount,icmpcount,tcpcount,udpcount,httpcount,ftpcount,telnetcount,othercount;  
+    
+  long starttime,endtime;
+  
+  DefaultMutableTreeNode root,sp,dp,winsize,trseqno,trackno,trflags,trackflag,trfinflag,trpushflag,trresetflag,trsynflag,trurgflag;
+  DefaultTreeModel treemodel;
+  
+  MainSniffer()
+  {
+     super("Packet Capture ...."); 
+     p=new JPanel();
+     btstart=new JButton("Start Capture");
+     btstop=new JButton("Stop Capture"); 
+     ta=new JTextArea(5,20);     
+     tahex=new JTextArea(5,20);
+     netdevices=new JComboBox();
+     lb=new JLabel("Capturing Stopped");
+     jsp=new JScrollPane(ta);
+     jsphex=new JScrollPane(tahex); 
+     ls=new java.awt.List();
+     //headerdetails=new JTree();
+     btsave=new JButton("Save Packets");
+     btopen=new JButton("Open File");
+     btfollowtcp=new JButton("Follow TCP Stream");
+     //label= new JLabel();
+
+    menubar=new JMenuBar();
+
+    menufile= new JMenu("File");
+    
+    open=new JMenuItem("Open");
+    menufile.add(open);
+    open.addActionListener(this);
+
+    save=new JMenuItem("Save");
+    menufile.add(save);
+    save.addActionListener(this);
+
+    menucapture= new JMenu("Capture");
+
+    start=new JMenuItem("Start");
+    menucapture.add(start);
+    start.addActionListener(this);
+
+    stop=new JMenuItem("Stop");
+    menucapture.add(stop);
+    stop.addActionListener(this);
+
+    menustatistics= new JMenu("Statistics");
+
+    networkgraph=new JMenuItem("Network Layer Protocol Statistics");
+    menustatistics.add(networkgraph);
+    networkgraph.addActionListener(this);
+
+    transportgraph=new JMenuItem("Transport Layer Protocol Statistics");
+    menustatistics.add(transportgraph);
+    transportgraph.addActionListener(this);
+
+    applicationgraph=new JMenuItem("Application Layer Protocol Statistics");
+    menustatistics.add(applicationgraph);
+    applicationgraph.addActionListener(this);
+
+    menubar.add(menufile);
+    menubar.add(menucapture);
+    menubar.add(menustatistics);
+
+
+    setJMenuBar(menubar);
+
+
+     p.setLayout(null); 
+   
+     btstart.setBounds(50,60,130,40);
+     btstop.setBounds(200,60,130,40);
+     netdevices.setBounds(10,20,750,30);
+     jsp.setBounds(10,510,475,150);
+     jsphex.setBounds(490,510,475,150); 
+     lb.setBounds(350,60,150,40);
+     //headerdetails.setBounds(10,350,750,150);
+     btopen.setBounds(520,60,130,40);
+     btsave.setBounds(670,60,130,40);
+     btfollowtcp.setBounds(820,60,150,40);
+     //btfollowtcp.setBounds()
+     //ls.setBounds(10,120,700,150);
+     ta.setWrapStyleWord(true);
+  
+     btstart.addActionListener(this);
+     btstop.addActionListener(this);
+     btsave.addActionListener(this);
+     btopen.addActionListener(this);
+     
+     btfollowtcp.addActionListener(this);
+     
+     p.add(btstart);
+     p.add(btstop);
+     p.add(netdevices);
+     p.add(jsp);
+     p.add(jsphex); 
+     p.add(lb);
+     
+     p.add(btopen);
+     p.add(btsave);
+     p.add(btfollowtcp);
+     add(p);
+   
+    setSize(1020,800);
+    setVisible(true);
+    setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE); 
+
+   packlist=new ArrayList<Packet>();
+
+   tm=new tablemodel();
+   jt=new JTable(tm);
+   js=new JScrollPane(jt);
+   jt.addMouseListener(this);
+   tm.fireTableDataChanged();
+   
+   p.add(js);
+   
+   js.setBounds(10,110,950,230);
+ }
+ 
+  class pcrec implements PacketReceiver
+   {
+     public void receivePacket(Packet p)
+     {
+       packlist.add(p);
+       if(flag==false)
+       {
+         captor.breakLoop();
+       }
+       //ta.append(p.toString()+"\n");
+       
+     }
+   }  
+
+  void go() throws Exception
+  {
+    device= JpcapCaptor.getDeviceList();
+    // get device list
+   String s; 
+   for(NetworkInterface nid:device)
+   {
+     s=nid.description;
+     for(NetworkInterfaceAddress ip:nid.addresses)
+     {
+        s=s+"    "+ip.address;
+     } 
+     netdevices.addItem(s);
+     s="";  
+   }
+  }   //go ends here
+
+
+  class capturejob implements Runnable
+  {
+    public void run()
+    {
+     try
+     {
+       int loc;
+       loc=netdevices.getSelectedIndex();
+       System.out.println("Device no selected "+loc);  
+       captor=JpcapCaptor.openDevice(device[loc],65535,false,100000);
+       
+      
+       captor.processPacket(-1,new pcrec());
+       // capture infinite packets  
+       captor.close();
+      
+      }
+     catch(Exception ex)
+     {
+       System.out.println(ex.getMessage());
+     }
+
+     }
+ }             //capture jobends here
+
+ public void actionPerformed(ActionEvent e)
+ {
+   if(e.getSource()==btstart || e.getSource()==start)
+   {
+     flag=true;
+     packlist.clear();
+     data.clear();
+     tm.fireTableDataChanged();
+    
+     starttime=new Date().getTime();
+     
+     new Thread(new capturejob()).start();
+     lb.setText("Capturing Started"); 
+   }
+   else if(e.getSource()==btstop || e.getSource()==stop)
+          {
+            flag=false; 
+            lb.setText("Capturing Stopped");      
+            displaypacklist();
+         }
+   else if(e.getSource()==btopen  ||  e.getSource()==open)
+   {
+     int ans;  
+     File fl;
+     String path;
+     jfc=new JFileChooser(); 
+     ans=jfc.showOpenDialog(this);    
+     if(ans==JFileChooser.APPROVE_OPTION)
+     {
+       fl=jfc.getSelectedFile();  
+       path=fl.getPath();
+       try
+         {
+            fis=new FileInputStream(path);
+            ois=new ObjectInputStream(fis);
+            packlist=(ArrayList<Packet>)(ois.readObject());
+            //JOptionPane.showMessageDialog(this,"Packets Saved to File Successfully");
+            displaypacklist();
+            ois.close();
+            fis.close();
+         }
+         catch (HeadlessException ex)
+         {
+           ex.printStackTrace();
+         }
+         catch (FileNotFoundException ex)
+         {
+           ex.printStackTrace();
+         }
+         catch (IOException ex)
+         {
+           ex.printStackTrace();
+         }  
+         catch(Exception ex)
+         {
+           ex.printStackTrace();  
+         }
+     
+     
+     }
+       
+   }
+   else if(e.getSource()==btsave|| e.getSource()==save)
+   {
+     int ans;  
+     File fl;
+     String path;
+     if(packlist.size()>0)
+     {
+       jfc=new JFileChooser();  
+       ans=jfc.showSaveDialog(this);
+       if(ans==JFileChooser.APPROVE_OPTION)
+       {
+         fl=jfc.getSelectedFile();  
+         path=fl.getPath();
+         try
+         {
+            fos=new FileOutputStream(path);
+            oos=new ObjectOutputStream(fos);
+            oos.writeObject( packlist );
+            JOptionPane.showMessageDialog(this,"Packets Saved to File Successfully");
+            oos.close();
+            fos.close();
+         }
+         catch (HeadlessException ex)
+         {
+           ex.printStackTrace();
+         }
+         catch (FileNotFoundException ex)
+         {
+           ex.printStackTrace();
+         }
+         catch (IOException ex)
+         {
+           ex.printStackTrace();
+         }
+         
+         
+          // logic to save packets to file 
+       }
+       
+     }
+     else 
+     {
+       JOptionPane.showMessageDialog(this,"No packets in the list to save");   
+     }
+// packets save logic 
+   }
+   
+   else if(e.getSource()==btfollowtcp)
+   {
+     int lc;  
+     String ans;
+     String srcport,destport;
+     String srcip,dstip;
+     
+     String sport,dport;
+     String sip,dip;
+     
+     String pckdata;
+     byte c[];
+     char chr;
+     
+     lc= jt.getSelectedRow();
+     ans=(String)tm.getValueAt(lc,4);
+     IPPacket ippck;
+     TCPPacket tcppck;
+     streamjoin sj=new streamjoin();
+     
+     System.out.println("Required Protocol.... "+ans);
+     
+     if(ans.equalsIgnoreCase("tcp")  || ans.equalsIgnoreCase("http") || ans.equalsIgnoreCase("ftp") || ans.equalsIgnoreCase("telnet") )
+     {
+        System.out.println("if condition of protocol matching...");
+         
+       srcip=(String)(tm.getValueAt(lc,2));
+       dstip=(String)tm.getValueAt(lc,3);
+       srcport=(String)tm.getValueAt(lc,6);
+       destport=(String)tm.getValueAt(lc,7);
+      
+        
+       System.out.println("required criteria");
+       System.out.println("Source IP "+srcip);
+       System.out.println("Destination IP "+dstip);
+       System.out.println("Source Port "+srcport);
+       System.out.println("Destination Port "+destport);
+       
+       
+       for(Packet pkct:packlist)
+       {
+         if( pkct instanceof TCPPacket )       //first check for TCPPacket
+         {
+           System.out.println("A TCP Pakcet");  
+             
+            ippck=(IPPacket)(pkct);
+            sip=ippck.src_ip.toString();
+            dip=ippck.dst_ip.toString();
+            
+            tcppck=(TCPPacket)(pkct);
+            sport=Integer.toString(tcppck.src_port);
+            dport=Integer.toString(tcppck.dst_port);
+            
+             System.out.println("Found TCP Packet having........");
+             System.out.println("Source IP "+srcip);
+             System.out.println("Destination IP "+dstip);
+             System.out.println("Source Port "+srcport);
+             System.out.println("Destination Port "+destport);
+            
+             System.out.println("------------------------------------"); 
+            
+             
+             
+            if(  (   (srcip.equals(sip) && srcport.equals(sport))  &&    (dstip.equals(dip) && destport.equals(dport) )    )     )    // request packet
+            {
+               c=pkct.data; 
+            
+               System.out.println("Data Matches Criterea");
+               for(int i=0;i<c.length;i++)
+               {
+                  chr=(char)(c[i]);
+                  sj.ta.append(Character.toString(chr));
+                  System.out.print(chr);  
+               }
+           
+            }
+             
+            if(  (  (srcip.equals(dip) && srcport.equals(dport))   &&   (dstip.equals(sip) && destport.equals(sport) ) )           )   // response packet
+            {
+              c=pkct.data; 
+            
+               System.out.println("Data Matches Criterea");
+               for(int i=0;i<c.length;i++)
+               {
+                  chr=(char)(c[i]);
+                  sj.ta.append(Character.toString(chr));
+                  System.out.print(chr);  
+               }   
+                 
+           }
+             
+         }
+       }
+         
+         
+     }
+     else
+     { 
+       JOptionPane.showMessageDialog(this,"Follow TCP Stream Option only works for TCP packets");  
+     }
+       
+   }
+   
+   else if(e.getSource()==networkgraph)
+   {
+     networklayerchart obj=new networklayerchart();
+     obj.drawpie(ipcount,arpcount,icmpcount);
+     JFrame fr=new JFrame();
+     fr.add(obj);
+     fr.setSize(600,500);
+     fr.setVisible(true);
+     fr.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+   }
+   
+   else if(e.getSource()==transportgraph)
+   {
+     transportlayerchart obj=new transportlayerchart();
+     obj.drawpie(tcpcount,udpcount);
+     JFrame fr=new JFrame();
+     fr.setTitle("Transport layer Chart");
+     fr.add(obj);
+     fr.setSize(600,500);
+     fr.setVisible(true);
+     fr.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+   }
+   
+   else if(e.getSource()==applicationgraph)
+   {
+     applicationlayerchart obj=new applicationlayerchart();
+     obj.drawpie(httpcount,ftpcount,telnetcount,othercount);
+     JFrame fr=new JFrame();
+     fr.add(obj);
+     fr.setSize(600,500);
+     fr.setVisible(true);
+     fr.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+   }
+   
+   
+}
+
+ class tablemodel extends AbstractTableModel
+ {
+   String columns[]={"No","time","Source IP","Destination IP","Protocol","Info"};
+   
+   public int getColumnCount()
+   {
+       return 6;
+   }
+   
+   public Class getColumnClass()
+   {
+    return String.class;
+   }
+   
+   public int getRowCount()
+   {
+     return data.size() ;  
+   }
+   
+   public Object getValueAt(int x,int y)
+   {
+     System.out.println("x= "+x+" and y= "+y);  
+     System.out.print( data.get(x)[y]+"  ");
+     return( data.get(x)[y] );  
+   }
+   
+   public String getColumnName(int c)
+   {
+     return( columns[c]);  
+   }
+ }
+ 
+ void displaypacklist()
+ {
+     
+   ipcount=0;
+   arpcount=0;
+   icmpcount=0;
+   tcpcount=0;
+   udpcount=0;
+   httpcount=0;
+   ftpcount=0;
+   telnetcount=0;
+   othercount=0;  
+       
+   System.out.println(packlist);
+   String s;
+   Packet pk; 
+   for(int i=0;i<packlist.size();i++)
+   {
+     pk=packlist.get(i);
+     pkno=Integer.toString(i);
+     pktime=Double.toString( (( pk.sec*1000+pk.usec/1000)-starttime)/1000.0 );
+          
+     if(pk instanceof IPPacket)
+     {
+       decodeasippacket(pk);
+       ipcount++;
+     }
+     
+     if(pk instanceof ICMPPacket)
+     {
+       decodeasicmppacket(pk);  
+       icmpcount++;
+     }
+     
+     if(pk instanceof ARPPacket)
+     {
+       decodeasarppacket(pk);  
+       arpcount++;
+       
+     }
+  
+     rowelement=new String[17];
+     
+     rowelement[0]=pkno;
+     rowelement[1]=pktime;
+     rowelement[2]=pksource;
+     rowelement[3]=pkdestination;
+     rowelement[4]=pkprotocol;
+     rowelement[5]=pkinfo;
+     
+     // rowelement 6 and 7 will be hidden 
+     // only used to rejoin TCP Stream
+     
+     data.add(rowelement);
+     
+     System.out.println(data.get(i)[0]+"  "+data.get(i)[2]+"  "+data.get(i)[3]);
+  
+       
+   }  
+   
+   tm.fireTableDataChanged();
+   
+ } 
+
+
+
+
+void decodeasippacket(Packet pkt)
+{
+  IPPacket pc;
+  pc=(IPPacket)(pkt);
+  pksource= pc.src_ip.toString();
+  pkdestination=pc.dst_ip.toString();
+  
+  if(pkt instanceof TCPPacket)
+  {
+    pkprotocol="TCP";  
+    decodeastcppacket(pkt);  
+  }
+  
+  else if(pkt instanceof UDPPacket)
+       {
+         pkprotocol="UDP";
+         decodeasudppacket(pkt);
+       }
+
+}
+
+void decodeasicmppacket(Packet pkt)
+{
+   ICMPPacket icpk;                                 // ICMP Packet Decoder Logic
+   icpk=(ICMPPacket)(pkt); 
+   pksource=icpk.src_ip.toString();
+   pkdestination=icpk.dst_ip.toString();
+   pkprotocol="ICMP";
+   if(icpk.type==0)
+   {
+    pkinfo="Echo (ping) reply";
+   }
+   else if(icpk.type==8)
+   {
+    pkinfo="Echo (ping) request";   
+   }
+   else if(icpk.type==3)
+   {
+    pkinfo="Destination Unreachable(Ping)";   
+   }
+   
+}
+
+void decodeasarppacket(Packet pkt)
+{
+   byte sr[],ds[],srmac[],dsmac[];
+   String sourcemac,destinationmac;
+   ARPPacket arpk;                  // ARP Packet Decoder Logic 
+   arpk=(ARPPacket)(pkt);
+   sr=arpk.sender_protoaddr;
+   ds=arpk.target_protoaddr;
+   srmac=arpk.sender_hardaddr;
+   dsmac=arpk.target_hardaddr;
+   
+   //System.out.println("Source ip length "+sdb.length);
+   //System.out.println("Destination ip length "+dsb.length);
+   pkprotocol="ARP";
+   pksource=sr[0]+"."+sr[1]+"."+sr[2]+"."+sr[3];
+   pkdestination=ds[0]+"."+ds[1]+"."+ds[2]+"."+ds[3];
+   sourcemac=Integer.toHexString(srmac[0])+":"+Integer.toHexString(srmac[1])+":"+Integer.toHexString(srmac[2])+":"+Integer.toHexString(srmac[3])+":"+Integer.toHexString(srmac[4])+":"+Integer.toHexString(srmac[5]);
+   destinationmac=Integer.toHexString(dsmac[0])+":"+Integer.toHexString(dsmac[1])+":"+Integer.toHexString(dsmac[2])+":"+Integer.toHexString(dsmac[3])+":"+Integer.toHexString(dsmac[4])+":"+Integer.toHexString(dsmac[5]);
+   
+   if(arpk.operation==1)
+   {
+     pkinfo="ARP Request";
+     pkinfo=pkinfo+" Src Mac : "+sourcemac+" Dest Mac : "+destinationmac;
+   }
+   else if( arpk.operation==2)
+   {
+     pkinfo="ARP Reply";
+     pkinfo=pkinfo+" Src Mac : "+sourcemac+" Dest Mac : "+destinationmac;
+   }
+}
+
+
+void decodeastcppacket(Packet pkt)
+{
+  TCPPacket pktcp;
+  pktcp=(TCPPacket)(pkt);
+  
+  tcpcount++;
+  // decode TCP Pakcet and seperate all TCP pakcet header fields 
+  pksourceport=pktcp.src_port;
+  pkdestinationport=pktcp.dst_port;
+  windowsize=pktcp.window;
+  
+  ackflag=pktcp.ack;
+  finflag=pktcp.fin;
+  pushflag=pktcp.psh;
+  synflag=pktcp.syn;
+  resetflag=pktcp.rst;
+  urgflag=pktcp.urg;
+  
+  ackno=pktcp.ack_num;
+  seqno=pktcp.sequence;
+  
+  rowelement[6]=Integer.toString(pksourceport);
+  rowelement[7]=Integer.toString(pkdestinationport);
+  rowelement[8]=Boolean.toString(ackflag);
+  rowelement[9]=Boolean.toString(finflag);
+  rowelement[10]=Boolean.toString(pushflag);
+  rowelement[11]=Boolean.toString(resetflag);
+  rowelement[12]=Boolean.toString(synflag);
+  rowelement[13]=Boolean.toString(urgflag);
+  rowelement[14]=Integer.toString(windowsize);
+  rowelement[15]=Long.toString(seqno);
+  rowelement[16]=Long.toString(ackno);
+  
+  pkinfo=pksourceport+" > "+pkdestinationport;
+  
+   if(ackflag==true)
+   pkinfo=pkinfo+" ACK ";   
+  
+   if(finflag==true )
+   pkinfo=pkinfo+" FIN ";
+    
+  if(pushflag==true)
+   pkinfo=pkinfo+" PUSH ";
+  
+  if(resetflag==true)
+   pkinfo=pkinfo+" RST ";
+  
+  if(synflag==true)
+    pkinfo=pkinfo+" SYN ";
+  
+  if(urgflag==true)
+    pkinfo=pkinfo+" URG ";
+  
+  if(pksourceport==80 || pkdestinationport==80)
+  {
+     checkanddecodeashttp(pktcp);      
+  }
+  else if(pksourceport==21 || pkdestinationport==21)
+  {
+     checkanddecodeasftp(pktcp);         
+  }
+  else if(pksourceport==23 || pkdestinationport==23)
+  {
+     checkanddecodeastelnet(pktcp); 
+  }
+
+
+
+   // TCP Packet Decoder Logic 
+  
+}
+
+void checkanddecodeashttp(TCPPacket tcppk)
+{
+  httpcount++;  
+    
+  String test;  
+  BufferedReader brs;
+  if(tcppk.psh==true)
+  {
+    pkprotocol="HTTP";
+    test=new String(tcppk.data);
+    brs=new BufferedReader(new StringReader(test));
+    try
+    {
+       pkinfo=brs.readLine();
+    } 
+    catch (IOException ex)
+    {
+      ex.printStackTrace();
+    }
+  
+  }
+   
+}
+
+
+void checkanddecodeasftp(TCPPacket tcppk)
+{
+  ftpcount++;  
+    
+  String test;  
+  BufferedReader brs;
+  if(tcppk.psh==true)
+  {
+    pkprotocol="FTP";
+    test=new String(tcppk.data);
+    brs=new BufferedReader(new StringReader(test));
+    try
+    {
+       pkinfo=brs.readLine();
+    } 
+    catch (IOException ex)
+    {
+      ex.printStackTrace();
+    }
+  }
+   
+}
+
+
+void checkanddecodeastelnet(TCPPacket tcppk)
+{
+  telnetcount++;  
+    
+  String test;  
+  BufferedReader brs;
+  if(tcppk.psh==true)
+  {
+    pkprotocol="TELNET";
+    test=new String(tcppk.data);
+    brs=new BufferedReader(new StringReader(test));
+    try
+    {
+       pkinfo=brs.readLine();
+    } 
+    catch (IOException ex)
+    {
+      ex.printStackTrace();
+    }
+  }
+   
+}
+
+
+void decodeasudppacket(Packet pkt)
+{
+  
+  UDPPacket pkudp;
+  pkudp=(UDPPacket)(pkt);
+  
+  udpcount++;
+  // decode TCP Pakcet and seperate all TCP pakcet header fields 
+  pksourceport=pkudp.src_port;
+  pkdestinationport=pkudp.dst_port;
+  udplength=pkudp.length;
+  pkinfo="Src Port : "+pksourceport+" Dest Port : "+pkdestinationport+" Length : "+udplength;   
+  // UDP Packet Decoder Logic
+}
+
+
+public void mouseClicked(MouseEvent e)
+  {
+    int loc;
+    loc=jt.getSelectedRow();
+   // JOptionPane.showMessageDialog(this,"From JTable row no "+jt.getSelectedRow()+" selected");  
+   // JOptionPane.showMessageDialog(this,"From TableModel row count "+ tm.getRowCount()+" selected");  
+   // JOptionPane.showMessageDialog(this,"From ArrayList row count "+ packlist.size()+" selected");  
+  
+    String row[]=new String[17];
+    
+    for(int l=0;l<17;l++)
+     row[l]=(String)(tm.getValueAt(loc,l));
+    
+    JOptionPane.showMessageDialog(this,("Location is "+loc));
+   
+    root=new DefaultMutableTreeNode("Transmission Control Protocol");
+    sp=new DefaultMutableTreeNode("Source Port "+row[6]);
+    dp=new DefaultMutableTreeNode("Destination Port "+row[7]);
+    winsize=new DefaultMutableTreeNode("Window Size"+row[14]);
+    trseqno=new DefaultMutableTreeNode("Sequence No "+row[15]);
+    JOptionPane.showMessageDialog(this,"Seq no is"+(row[15]));
+    trackno=new DefaultMutableTreeNode("Acknowledgement No "+row[16]);
+    JOptionPane.showMessageDialog(this,("ack no is "+row[16]));
+    trflags=new DefaultMutableTreeNode("Flags ");
+    trackflag=new DefaultMutableTreeNode("Acknowledgment Flag "+row[8]);
+    trfinflag=new DefaultMutableTreeNode("Finish Flag "+row[9]);
+    trpushflag=new DefaultMutableTreeNode("Push Flag "+row[10]);
+    trresetflag=new DefaultMutableTreeNode("Reset Flag "+row[11]);
+    trsynflag=new DefaultMutableTreeNode("Syn Flag "+row[12]);
+    trurgflag=new DefaultMutableTreeNode("Urgent flag "+row[13]);
+    
+    treemodel=new DefaultTreeModel(root);
+    
+    root.add(sp);
+    root.add(dp);
+    root.add(winsize);
+    root.add(trseqno);
+    root.add(trackno);
+    root.add(trflags);
+    
+    trflags.add(trackflag);
+    trflags.add(trfinflag);
+    trflags.add(trpushflag);
+    trflags.add(trresetflag);
+    trflags.add(trsynflag);
+    trflags.add(trurgflag);
+    
+    headerdetails=new JTree(treemodel);
+    
+    treemodel.nodeStructureChanged(root);
+    
+    jsptree=new JScrollPane(headerdetails);
+    jsptree.setBounds(10,350,950,150);
+    p.add(jsptree);
+    
+    treemodel.reload();
+    
+    headerdetails.repaint();
+    jsptree.repaint();
+    p.repaint();
+    
+        
+    
+     Packet temp;
+     byte d[];
+     char ch;
+    
+    
+     temp=packlist.get(loc);
+     ta.setText("");
+     tahex.setText("");
+     d=temp.data;
+     for(int i=0;i<d.length;i++)
+     {
+       ch=(char)(d[i]);
+       ta.append(Character.toString(ch));
+       if(i%16==0)
+       {
+         tahex.append("\n"); 
+       } 
+       tahex.append(Integer.toHexString(ch)+" ");
+      
+     }  
+    
+    
+    
+    
+    
+}
+  
+  public void mouseExited(MouseEvent e)
+  { }    
+      
+  public void mouseEntered(MouseEvent e)
+  {  }
+
+  public void mouseReleased(MouseEvent e)
+  { } 
+  
+  public void mousePressed(MouseEvent e)
+  { }
+
+  class streamjoin extends JFrame
+  {
+    JPanel jp;
+    JScrollPane jsrp;
+    JTextArea ta;
+    JButton btsave,btcancel;
+    streamjoin()
+    {
+      jp=new JPanel();
+      ta=new JTextArea(50,40);
+      jsrp=new JScrollPane(ta);
+      btsave=new JButton("Save to File");
+      btcancel=new JButton("Cancel");
+      
+      jp.setLayout(null);
+      
+      jp.add(jsrp);
+      jp.add(btsave);
+      jp.add(btcancel);
+      
+      add(jp);
+      
+      jsrp.setBounds(10, 10, 530, 450);
+      btsave.setBounds(90, 480, 140, 30);
+      btcancel.setBounds(260, 480, 140, 30);
+      
+      setSize(550,520);
+      setVisible(true);
+    }
+    
+    
+  }
+  
+   
+  
+ public static void main(String args[]) throws Exception
+ {
+   MainSniffer obj=new MainSniffer(); 
+   obj.go();
+ }
+}
+
+
+
+
+

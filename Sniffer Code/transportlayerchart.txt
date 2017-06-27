@@ -1,0 +1,40 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
+
+class transportlayerchart extends JPanel
+{
+ double tcp,udp;
+ double totalcount;
+ String tcpper,udpper;
+  
+ void  drawpie(int i,int a)
+ {
+   tcp=i;
+   udp=a;
+   totalcount=tcp+udp;
+ }
+ 
+  public void paint (Graphics g)
+  {
+   int p1,p2;
+   p1=(int)(tcp*360/totalcount);
+   p2=360-p1;
+   g.setColor(Color.RED);
+   g.fillArc(25,100,300,300,0,p1);
+   g.drawString(("TCP protocol "+(int)(tcp*100/totalcount)+"%"),400,100);
+   
+   g.setColor(Color.BLUE);
+   g.fillArc(25,100,300,300,p1,p2);
+   g.drawString(("UDP protocol "+(int)(udp*100/totalcount)+"%"),400,120);
+   
+   g.setColor(Color.BLACK);
+   g.drawString("Transport Layer Statistics",100,25);
+   g.setColor(Color.RED);
+   
+   
+    
+  }
+ 
+}

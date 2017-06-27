@@ -1,0 +1,51 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
+
+class applicationlayerchart extends JPanel
+{
+ double http,ftp,telnet,other;
+ double totalcount;
+ String httpper,ftpper,telnetper,otherper;
+  
+ void  drawpie(int h,int f,int t,int o)
+ {
+   http=h;
+   ftp=f;
+   telnet=t;
+   other=o;
+   totalcount=http+ftp+telnet+other;
+ }
+ 
+  public void paint (Graphics g)
+  {
+   int p1,p2,p3,p4;
+   p1=(int)(http*360/totalcount);
+   p2=(int)(ftp*360/totalcount);
+   p3=(int)(telnet*360/totalcount);
+   p4=360-p1-p2-p3;
+   g.setColor(Color.RED);
+   g.fillArc(25,100,300,300,0,p1);
+   g.drawString(("HTTP protocol "+(int)(http*100/totalcount)+"%"),400,100);
+   
+   g.setColor(Color.BLUE);
+   g.fillArc(25,100,300,300,p1,p2);
+   g.drawString(("FTP protocol "+(int)(ftp*100/totalcount)+"%"),400,120);
+   
+   
+   g.setColor(Color.GREEN);
+   g.fillArc(25,100,300,300,p1+p2,p3);
+   g.drawString(("TELNET protocol "+(int)(telnet*100/totalcount)+"%"),400,140);
+   
+   g.setColor(Color.MAGENTA);
+   g.fillArc(25,100,300,300,p1+p2+p3,p4);
+   g.drawString(("Other protocols "+(int)(other*100/totalcount)+"%"),400,160);
+   
+   g.setColor(Color.BLACK);
+   g.drawString("Application Layer Statistics",100,25);
+      
+    
+  }
+ 
+}

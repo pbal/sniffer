@@ -1,0 +1,48 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
+
+class networklayerchart extends JPanel
+{
+ double ip,arp,icmp;
+ double totalcount;
+ String ipper,arpper,icmpper;
+  
+ void  drawpie(int i,int a,int ic)
+ {
+   ip=i;
+   arp=a;
+   icmp=ic;
+   totalcount=ip+arp+icmp;
+ }
+ 
+  public void paint (Graphics g)
+  {
+   int p1,p2,p3;
+   p1=(int)(ip*360/totalcount);
+   p2=(int)(arp*360/totalcount);
+   p3=360-p1-p2;
+   g.setColor(Color.RED);
+   g.fillArc(25,100,300,300,0,p1);
+   g.drawString(("IP protocol "+(int)(ip*100/totalcount)+"%"),400,100);
+   
+   g.setColor(Color.BLUE);
+   g.fillArc(25,100,300,300,p1,p2);
+   g.drawString(("ARP protocol "+(int)(arp*100/totalcount)+"%"),400,120);
+   
+   
+   g.setColor(Color.GREEN);
+   g.fillArc(25,100,300,300,p1+p2,p3);
+   g.drawString(("ICMP protocol "+(int)(icmp*100/totalcount)+"%"),400,140);
+   
+   
+   g.setColor(Color.BLACK);
+   g.drawString("Network Layer Statistics",100,25);
+   g.setColor(Color.RED);
+   
+   
+    
+  }
+ 
+}
